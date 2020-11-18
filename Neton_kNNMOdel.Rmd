@@ -1,0 +1,467 @@
+---
+title: "kNN Prediction Model"
+author: "Jack Neton"
+date: "10/27/2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+# Loading libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+# Clear environmet of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE)lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), detach, character.only = TRUE, unload = TRUE)
+```
+
+```{r}
+#Load packages..
+library(tidyverse)
+
+#For kNN
+library(caret)
+library(FNN)
+library(class)
+
+#for visualizations in EDA
+library(ggplot2)
+library(gridExtra)
+library(colorspace)
+library(ggthemes)
+```
+
+# Loading Data 
+```{r}
+#Import data
+loan <- read.csv("loan_2.csv")
+
+#sample data
+miniloan <- sample_frac(loan, 0.1)
+
+#We are working with a smaller data sample so our confusion matrix will run before the kNN
+```
+
+## Cleaning/Subsetting Data
+```{r}
+#view data head
+head(miniloan)
+```
+
+```{r}
+#view data names
+names(loan)
+```
+
+```{r}
+#view data structure
+str(miniloan)
+```
+
+```{r}
+#Dropping columns to tailor data to our goal
+miniloan <- miniloan[ , -c(1, 3, 4, 9, 6, 13, 15:22, 24:27)]
+
+names(miniloan)
+
+```
+
+
+```{r}
+#Structure of our new dataset
+str(miniloan)
+```
+
+```{r}
+#Table with count of Risk Level
+table(miniloan$v27)
+```
+
+```{r}
+#Set categorical variables as factor
+miniloan$v10 <- (miniloan$v10/100)
+miniloan$v22 <- as.numeric(miniloan$v22)
+miniloan$v27 <- as.factor(miniloan$v27)
+```
+
+
+```{r}
+#Verify structure
+str(miniloan)
+```
+
+```{r}
+#Removing entries where the MI % is not available
+miniloan <- miniloan[!(miniloan$v6 =="999"),]
+
+str(miniloan) 
+```
+
+```{r}
+#Rename output variables
+miniloan$v27 <- factor(miniloan$v27,
+                   levels = c("0", "1"),
+                   labels = c("No", "Yes"))
+
+table(miniloan$v27)
+```
+
+```{r}
+#Checking for outliers in v1
+summary(miniloan$v1)
+```
+
+```{r}
+#Removing identified outliers from v1
+v1outliers <- boxplot(miniloan$v1, plot = FALSE)$out
+
+miniloan <- miniloan[-which(miniloan$v1 %in% v1outliers),]
+
+summary(miniloan$v1)
+```
+
+```{r}
+#Checking for outliers in v4
+summary(miniloan$v4)
+
+#the force is strong with v4
+```
+
+```{r}
+#Checking for outliers in v9
+summary(miniloan$v9)
+```
+
+```{r}
+#Removing identified outliers from v9
+v9outliers <- boxplot(miniloan$v9, plot = FALSE)$out
+
+miniloan <- miniloan[-which(miniloan$v9 %in% v9outliers),]
+
+summary(miniloan$v9)
+```
+
+```{r}
+#Checking for outliers in v10
+summary(miniloan$v10)
+```
+
+```{r}
+#Removing identified outliers from v10
+v10outliers <- boxplot(miniloan$v10, plot = FALSE)$out
+
+miniloan <- miniloan[-which(miniloan$v10 %in% v10outliers),]
+
+summary(miniloan$v10)
+```
+
+```{r}
+#Checking for outliers in v11
+summary(miniloan$v11)
+```
+
+```{r}
+#Removing identified outliers from v11
+v11outliers <- boxplot(miniloan$v11, plot = FALSE)$out
+
+miniloan <- miniloan[-which(miniloan$v11 %in% v11outliers),]
+
+summary(miniloan$v11)
+```
+
+```{r}
+#Checking for outliers in v13
+summary(miniloan$v13)
+
+#the force is strong with v13
+```
+
+```{r}
+#Checking for outliers in v22
+summary(miniloan$v22)
+
+#the force is strong with v22
+```
+
+# EDA and Visuals
+```{r}
+#Visualizing our output variable v27
+
+loan$v27 <- factor(loan$v27,
+                   levels = c("0", "1"),
+                   labels = c("No", "Yes"))
+grid.arrange(
+  
+ggplot(data = miniloan,
+       mapping = aes(x = v27)) + 
+  geom_bar(color="darkblue", fill="lightblue") +
+  ggtitle("Miniloan Risk Level") +
+  theme_classic() +
+  labs(x = "Risk Level"),
+
+ggplot(data=loan, mapping = aes(x = v27)) + 
+  geom_bar(color="darkblue", fill="lightblue") +
+  ggtitle("Loan Risk Level") +
+  theme_classic() +
+  labs(x = "Risk Level"),
+
+ncol = 2
+)
+```
+**Comments**
+
++ The purpose of this visual is to see if our sample count is similar to the full dataset, which it is.
+
+```{r}
+#Histograms & boxplots for v1
+grid.arrange(
+  miniloan %>% 
+  ggplot(mapping = aes(x = v1)) +
+  geom_boxplot(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  ggtitle("Credit Score Distribution",
+          subtitle = "Data is negatively skewed") +
+  labs(x = "", y = ""),
+
+miniloan %>% 
+  ggplot(mapping = aes(x = v1)) +
+  geom_histogram(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "Score", y = "", color = ""),
+
+ncol = 1
+)
+```
+
+```{r}
+#Histograms & boxplots for v9
+grid.arrange(
+  miniloan %>% 
+  ggplot(mapping = aes(x = v9)) +
+  geom_boxplot(color="darkblue", fill="lightblue") +
+  ggtitle("Distribution for Original CLTV") +
+  labs(x = "") +
+  theme_classic(),
+
+miniloan %>% 
+  ggplot(mapping = aes(x = v9)) +
+  geom_histogram(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "Original CLTV Value"),
+  
+ncol =1
+)
+```
+
+```{r}
+#Histograms & boxplots for v10
+grid.arrange(
+  miniloan %>% 
+  ggplot(mapping = aes(x = v10)) +
+  geom_boxplot(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "") +
+  ggtitle("Origial DTI Ratio",
+          subtitle = "Data is fairly negatively skewed"),
+  
+miniloan %>% 
+  ggplot(mapping = aes(x = v10)) +
+  geom_histogram(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "Original DTI Ratio"),
+
+ncol =1
+)
+```
+
+```{r}
+#Histograms & boxplots for v11
+grid.arrange(
+  miniloan %>% 
+  ggplot(mapping = aes(x = v11)) +
+  geom_boxplot(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "") +
+  ggtitle("Origial Unpaid Priciple Balance"),
+
+miniloan %>% 
+  ggplot(mapping = aes(x = v11)) +
+  geom_histogram(color="darkblue", fill="lightblue") +
+  theme_classic() +
+  labs(x = "UPB Value"),
+
+ncol =1
+)
+```
+
+# Preparing Data for kNN
+```{r}
+#Set training and validation sets
+set.seed(666)
+
+train_index <- sample(1:nrow(miniloan), 0.6 * nrow(miniloan))
+valid_index <- setdiff(1:nrow(miniloan), train_index)
+
+train <- miniloan[train_index, ]
+valid <- miniloan[valid_index, ]
+```
+
+```{r}
+#Names in training set
+t(t(names(train)))
+```
+
+```{r}
+#Names in validation set
+t(t(names(valid)))
+```
+
+```{r}
+#Rows in training/validation sets
+nrow(train)
+
+nrow(valid)
+```
+
+```{r}
+#Define a new customer fo rprediction model
+
+new_cust <- data.frame(v1 = 800,
+                       v4 = 201611,
+                       v6 = 25,
+                       v7 = 1,
+                       v9 = 60,
+                       v10 = 39,
+                       v11 = 274000,
+                       v13 = 3.625,
+                       v22 = 360
+)
+```
+
+
+```{r}
+#Observe the new customer
+t(t(names(new_cust)))
+
+str(new_cust)
+```
+
+```{r}
+#Noramlise for numerical variables
+train_norm <- train
+valid_norm <- valid
+
+norm_values <- preProcess(train,
+                          method = c("center",
+                                     "scale"))
+
+train_norm <- predict(norm_values, 
+                      train)
+valid_norm <- predict(norm_values,
+                     valid)
+
+new_cust_norm <- predict(norm_values, new_cust)
+
+new_cust_norm
+```
+
+## Confusion Matrices
+```{r}
+#Confusion Matrix, k = 3
+knn_model_k3 <- caret::train(v27 ~ ., 
+                             data = train_norm, 
+                             tuneGrid = data.frame(k = 3),
+                             method = "knn")
+
+# The following means predict the outcome of the validation set (i.e. valid_norm) using the kNN model you just built:
+
+knn_pred_k3 <- predict(knn_model_k3, 
+                       newdata = valid_norm)
+
+# This is the confusion matrix (assuming your outcome variable is in col 13):
+
+confusionMatrix(knn_pred_k3, 
+                valid_norm[, 10])
+```
+
+```{r}
+#Confusion Matrix, k = 5
+knn_model_k5 <- caret::train(v27 ~ ., 
+                             data = train_norm, 
+                             tuneGrid = data.frame(k = 5),
+                             method = "knn")
+
+# The following means predict the outcome of the validation set:
+
+knn_pred_k5 <- predict(knn_model_k5, 
+                       newdata = valid_norm)
+
+# This is the confusion matrix:
+
+confusionMatrix(knn_pred_k5, 
+                valid_norm[, 10])
+```
+
+
+```{r}
+#Confusion Matrix, k = 7
+knn_model_k7 <- caret::train(v27 ~ ., 
+                             data = train_norm, 
+                             tuneGrid = data.frame(k = 7),
+                             method = "knn")
+
+# The following means predict the outcome of the validation set (i.e. valid_norm) using the kNN model you just built:
+
+knn_pred_k7 <- predict(knn_model_k7, 
+                       newdata = valid_norm)
+
+# This is the confusion matrix (assuming your outcome variable is in col 13):
+
+confusionMatrix(knn_pred_k7, 
+                valid_norm[, 10])
+```
+
+# Running kNN on new cutsomer
+
+## k=3
+```{r}
+#Run kNN predictions on validation set
+#k = 3
+
+new_cust_predict_3 <- class::knn(train = train_norm[, -c(10)], 
+                               test = new_cust_norm,
+                               cl = train_norm[, 10], k = 3)
+new_cust_predict_3
+```
+
+## k=5
+```{r}
+#Run kNN predictions on validation set
+#k = 5
+
+new_cust_predict_5 <- class::knn(train = train_norm[, -c(10)], 
+                               test = new_cust_norm,
+                               cl = train_norm[, 10], k = 5)
+new_cust_predict_5
+```
+
+## k=7
+```{r}
+#Run kNN predictions on validation set
+#k = 7
+
+new_cust_predict_7 <- class::knn(train = train_norm[, -c(10)], 
+                               test = new_cust_norm,
+                               cl = train_norm[, 10], k = 7)
+new_cust_predict_7
+```
+
+
+
